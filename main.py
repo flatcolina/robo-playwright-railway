@@ -12,8 +12,8 @@ def root():
 @app.get("/executar")
 async def executar_robo():
     checkin = "2025-07-28"
-    checkout = "2025-07-30"
-    hospedes = "2"
+    checkout = "2025-07-31"
+    hospedes = "5"
 
     url = (
         "https://www.booking.com/hotel/br/eco-resort-praia-dos-carneiros-ao-lado-da-igrejinha-praia-dos-carneiros1.pt-br.html"
