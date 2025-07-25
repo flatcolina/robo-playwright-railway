@@ -34,10 +34,12 @@ async def executar_robo(
                 headless=True,
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
             )
-            page = await browser.new_page()
             
-            # Configurar user agent para evitar detecção de bot
-            await page.set_user_agent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+            # Criar contexto com user agent personalizado
+            context = await browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            )
+            page = await context.new_page()
             
             # Navegar para a página com timeout maior
             await page.goto(url, timeout=90000, wait_until='networkidle')
