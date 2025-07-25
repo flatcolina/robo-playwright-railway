@@ -1,10 +1,20 @@
 
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from playwright.async_api import async_playwright
 import uvicorn
 import asyncio
 
 app = FastAPI()
+
+# Configuração CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permite todas as origens
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite todos os métodos
+    allow_headers=["*"],  # Permite todos os headers
+)
 
 @app.get("/")
 def read_root():
