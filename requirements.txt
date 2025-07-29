@@ -1,2 +1,3 @@
-requests
-openpyxl
+fastapi
+uvicorn[standard]
+playwright
