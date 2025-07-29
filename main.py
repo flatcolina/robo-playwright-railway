@@ -5,6 +5,11 @@ from playwright.sync_api import sync_playwright
 from datetime import datetime
 import re
 
+proxy_config = {
+    'server': 'http://gate.decodo.com:10000',
+    'username': 'sp15jkf0eh',
+    'password': '~Y2pk5UkfuU6Ary1bj'
+}
 app = FastAPI()
 
 # Libera CORS para frontend
@@ -28,9 +33,10 @@ UNIDADES = [
 ]
 
 @app.get("/executar")
-def executar(checkin: str = Query(...), checkout: str = Query(...), hospedes: int = Query(...), criancas: int = Query(0)):
+def executar(checkin: str = Query(...), checkout: str = Query(...), adultos: int = Query(...), criancas: int = Query(0)):
     try:
-        adultos = hospedes - criancas
+        # Corrigido: adultos vem direto do parâmetro, hospedes é a soma
+        hospedes = adultos + criancas
         data_in = datetime.strptime(checkin, "%Y-%m-%d")
         data_out = datetime.strptime(checkout, "%Y-%m-%d")
         numero_noites = (data_out - data_in).days
@@ -38,10 +44,29 @@ def executar(checkin: str = Query(...), checkout: str = Query(...), hospedes: in
         resultados = []
 
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-
             for unidade in UNIDADES:
+                # Abre novo browser com IP rotativo para cada unidade
+                browser = p.chromium.launch(headless=True, proxy=proxy_config)
+                context = browser.new_context()
+                
+                # Bloqueia recursos desnecessários para economizar banda do proxy
+                def handle_route(route):
+                    url = route.request.url
+                    if any(domain in url for domain in [
+                        'a0.muscache.com',
+                        'www.googletagmanager.com',
+                        'google-analytics.com',
+                        'facebook.com',
+                        'doubleclick.net',
+                        'googlesyndication.com'
+                    ]):
+                        route.abort()
+                    else:
+                        route.continue_()
+                
+                context.route("**/*", handle_route)
+                page = context.new_page()
+                
                 print(f"🔍 Verificando: {unidade['nome']} ({unidade['id']})")
                 url = (
                     f"https://www.airbnb.com.br/book/stays/{unidade['id']}"
@@ -73,9 +98,12 @@ def executar(checkin: str = Query(...), checkout: str = Query(...), hospedes: in
                         "nota": "9.0",
                         "urlretorno": url,
                     })
+                
+                # Fecha o navegador após cada consulta para evitar interferências
+                browser.close()
+                print(f"🔄 Navegador fechado para {unidade['nome']}")
 
             print("🔚 Consulta finalizada.")
-            browser.close()
 
         return {"status": "ok", "resultado": resultados}
 
