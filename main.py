@@ -5,11 +5,6 @@ from playwright.sync_api import sync_playwright
 from datetime import datetime
 import re
 
-proxy_config = {
-    'server': 'http://gate.decodo.com:10000',
-    'username': 'sp15jkf0eh',
-    'password': '~Y2pk5UkfuU6Ary1bj'
-}
 app = FastAPI()
 
 # Libera CORS para frontend
@@ -45,11 +40,11 @@ def executar(checkin: str = Query(...), checkout: str = Query(...), adultos: int
 
         with sync_playwright() as p:
             for unidade in UNIDADES:
-                # Abre novo browser com IP rotativo para cada unidade
-                browser = p.chromium.launch(headless=True, proxy=proxy_config)
+                # Abre novo browser para cada unidade (sem proxy pois não usa Decodo)
+                browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
                 
-                # Bloqueia recursos desnecessários para economizar banda do proxy
+                # Bloqueia recursos desnecessários para economizar banda
                 def handle_route(route):
                     url = route.request.url
                     if any(domain in url for domain in [
@@ -58,7 +53,12 @@ def executar(checkin: str = Query(...), checkout: str = Query(...), adultos: int
                         'google-analytics.com',
                         'facebook.com',
                         'doubleclick.net',
-                        'googlesyndication.com'
+                        'googlesyndication.com',
+                        'googleadservices.com',
+                        'googletag',
+                        'analytics.js',
+                        'gtag',
+                        'fbevents.js'
                     ]):
                         route.abort()
                     else:
