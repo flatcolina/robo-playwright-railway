@@ -82,18 +82,25 @@ def exportar_para_google_sheets(dados):
         try:
             worksheet = spreadsheet.worksheet("Dados")
         except gspread.exceptions.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title="Dados", rows=1000, cols=5)
+            worksheet = spreadsheet.add_worksheet(title="Dados", rows=1000, cols=6)
         
         # Definir cabeçalhos se não existirem
         if worksheet.row_count == 0 or not worksheet.row_values(1):
-            headers = ["Data Check-in", "Data Check-out", "Número de Hóspedes", "Apartamento", "Valor"]
+            headers = ["Data Consulta", "Hora Consulta", "Data Check-in", "Data Check-out", "Número de Hóspedes", "Apartamento", "Valor"]
             worksheet.insert_row(headers, 1)
+        
+        # Obter data e hora atual
+        agora = datetime.now()
+        data_consulta = agora.strftime("%d/%m/%Y")
+        hora_consulta = agora.strftime("%H:%M:%S")
         
         # Inserir dados
         if dados:
             rows = []
             for item in dados:
                 rows.append([
+                    data_consulta,
+                    hora_consulta,
                     item.get('checkin', ''),
                     item.get('checkout', ''),
                     str(item.get('hospedes', '')),
