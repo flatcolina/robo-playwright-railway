@@ -8,6 +8,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 import os
+import requests
 
 app = FastAPI()
 
@@ -34,6 +35,10 @@ UNIDADES = [
 # ID da planilha Google Sheets
 SPREADSHEET_ID = "1cFibFKZKS5hStukgHNifc63MRB5j47wUwngSVP3oL1w"
 
+# Configuracoes do Telegram
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+
 def obter_credenciais_google():
     """
     Obtém as credenciais do Google a partir da variável de ambiente ou arquivo
@@ -59,19 +64,56 @@ def obter_credenciais_google():
         
         return None
     except Exception as e:
-        print(f"⚠️  Erro ao obter credenciais: {e}")
+        print(f"Aviso: Erro ao obter credenciais: {e}")
         return None
+
+def enviar_notificacao_telegram(dados):
+    """
+    Envia notificacao via Telegram para cada dado gravado
+    """
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+    
+    try:
+        for item in dados:
+            mensagem = (
+                "🤖 NOVO DADO GRAVADO NA PLANILHA\n\n"
+                f"📅 Data Consulta: {item.get('data_consulta', '')}\n"
+                f"⏰ Hora Consulta: {item.get('hora_consulta', '')}\n"
+                f"🏨 Apartamento: {item.get('apartamento', '')}\n"
+                f"📆 Check-in: {item.get('checkin', '')}\n"
+                f"📆 Check-out: {item.get('checkout', '')}\n"
+                f"👥 Hospedes: {item.get('hospedes', '')}\n"
+                f"💰 Valor: {item.get('valor', 'Indisponivel')}"
+            )
+            
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            payload = {
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": mensagem
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            if response.status_code == 200:
+                print(f"OK: Notificacao Telegram enviada para {item.get('apartamento', '')}")
+            else:
+                print(f"Aviso: Erro ao enviar notificacao Telegram: {response.text}")
+        
+        return True
+    except Exception as e:
+        print(f"Aviso: Erro ao enviar notificacao Telegram: {e}")
+        return False
 
 def exportar_para_google_sheets(dados):
     """
     Exporta os dados coletados para a planilha Google Sheets
-    Função não-bloqueante que não afeta o resultado da API
+    Funcao nao-bloqueante que nao afeta o resultado da API
     """
     try:
         creds = obter_credenciais_google()
         
         if not creds:
-            print("⚠️  Google Sheets não configurado - dados não serão exportados")
+            print("Aviso: Google Sheets nao configurado - dados nao serao exportados")
             return False
         
         # Autenticar com Google Sheets
@@ -82,11 +124,11 @@ def exportar_para_google_sheets(dados):
         try:
             worksheet = spreadsheet.worksheet("Dados")
         except gspread.exceptions.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title="Dados", rows=1000, cols=6)
+            worksheet = spreadsheet.add_worksheet(title="Dados", rows=1000, cols=7)
         
-        # Definir cabeçalhos se não existirem
+        # Definir cabecalhos se nao existirem
         if worksheet.row_count == 0 or not worksheet.row_values(1):
-            headers = ["Data Consulta", "Hora Consulta", "Data Check-in", "Data Check-out", "Número de Hóspedes", "Apartamento", "Valor"]
+            headers = ["Data Consulta", "Hora Consulta", "Data Check-in", "Data Check-out", "Numero de Hospedes", "Apartamento", "Valor"]
             worksheet.insert_row(headers, 1)
         
         # Obter data e hora atual
@@ -105,39 +147,43 @@ def exportar_para_google_sheets(dados):
                     item.get('checkout', ''),
                     str(item.get('hospedes', '')),
                     item.get('apartamento', ''),
-                    item.get('valor', 'Indisponível')
+                    item.get('valor', 'Indisponivel')
                 ])
+                
+                # Adicionar data e hora ao item para enviar no Telegram
+                item['data_consulta'] = data_consulta
+                item['hora_consulta'] = hora_consulta
             
             # Inserir todas as linhas de uma vez
             worksheet.insert_rows(rows, 2)
-            print(f"✅ Dados exportados para Google Sheets")
+            print("OK: Dados exportados para Google Sheets")
             return True
         
         return False
             
     except Exception as e:
-        print(f"⚠️  Erro ao exportar para Google Sheets: {e}")
+        print(f"Aviso: Erro ao exportar para Google Sheets: {e}")
         return False
 
 @app.get("/executar")
 def executar(checkin: str = Query(...), checkout: str = Query(...), adultos: int = Query(...), criancas: int = Query(0)):
     try:
-        # Corrigido: adultos vem direto do parâmetro, hospedes é a soma
+        # Corrigido: adultos vem direto do parametro, hospedes eh a soma
         hospedes = adultos + criancas
         data_in = datetime.strptime(checkin, "%Y-%m-%d")
         data_out = datetime.strptime(checkout, "%Y-%m-%d")
         numero_noites = (data_out - data_in).days
 
         resultados = []
-        dados_exportacao = []  # Lista para armazenar dados para exportação
+        dados_exportacao = []  # Lista para armazenar dados para exportacao
 
         with sync_playwright() as p:
             for unidade in UNIDADES:
-                # Abre novo browser para cada unidade (sem proxy pois não usa Decodo)
+                # Abre novo browser para cada unidade (sem proxy pois nao usa Decodo)
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
                 
-                # Bloqueia recursos desnecessários para economizar banda
+                # Bloqueia recursos desnecessarios para economizar banda
                 def handle_route(route):
                     url = route.request.url
                     if any(domain in url for domain in [
@@ -160,7 +206,7 @@ def executar(checkin: str = Query(...), checkout: str = Query(...), adultos: int
                 context.route("**/*", handle_route)
                 page = context.new_page()
                 
-                print(f"🔍 Verificando: {unidade['nome']} ({unidade['id']})")
+                print(f"Verificando: {unidade['nome']} ({unidade['id']})")
                 url = (
                     f"https://www.airbnb.com.br/book/stays/{unidade['id']}"
                     f"?checkin={checkin}"
@@ -173,21 +219,21 @@ def executar(checkin: str = Query(...), checkout: str = Query(...), adultos: int
                     f"&isWorkTrip=false"
                     f"&numberOfInfants=0&numberOfPets=0"
                 )
-                print(f"🌐 URL acessada: {url}")
+                print(f"URL acessada: {url}")
                 page.goto(url)
                 page.wait_for_timeout(5000)
 
                 content = page.content()
                 match = re.search(r'R\$\s?\d{1,3}(\.\d{3})*,\d{2}', content)
                 
-                valor_encontrado = "Indisponível"
+                valor_encontrado = "Indisponivel"
                 
                 if match:
                     preco_texto = match.group()
                     preco_limpo = preco_texto.replace("R$", "").replace(".", "").replace(",", ".").strip()
                     preco_total = float(preco_limpo)
                     media_diaria = preco_total / numero_noites
-                    print(f"✅ Preço encontrado para {unidade['nome']}: {match.group()}")
+                    print(f"Preco encontrado para {unidade['nome']}: {match.group()}")
                     valor_encontrado = f"R$ {preco_total:.2f}"
                     resultados.append({
                         "nome": unidade["nome"],
@@ -198,12 +244,12 @@ def executar(checkin: str = Query(...), checkout: str = Query(...), adultos: int
                 else:
                     resultados.append({
                         "nome": unidade["nome"],
-                        "preco": "Indisponível",
+                        "preco": "Indisponivel",
                         "nota": "9.0",
                         "urlretorno": url,
                     })
                 
-                # Adicionar aos dados de exportação
+                # Adicionar aos dados de exportacao
                 dados_exportacao.append({
                     'checkin': checkin,
                     'checkout': checkout,
@@ -212,15 +258,18 @@ def executar(checkin: str = Query(...), checkout: str = Query(...), adultos: int
                     'valor': valor_encontrado
                 })
                 
-                # Fecha o navegador após cada consulta para evitar interferências
+                # Fecha o navegador apos cada consulta para evitar interferencias
                 browser.close()
-                print(f"🔄 Navegador fechado para {unidade['nome']}")
+                print(f"Navegador fechado para {unidade['nome']}")
 
-            print("🔚 Consulta finalizada.")
+            print("Consulta finalizada.")
             
-            # Exportar dados para Google Sheets (não bloqueia a resposta)
+            # Exportar dados para Google Sheets
             if dados_exportacao:
                 exportar_para_google_sheets(dados_exportacao)
+                
+                # Enviar notificacoes via Telegram
+                enviar_notificacao_telegram(dados_exportacao)
 
         return {"status": "ok", "resultado": resultados}
 
